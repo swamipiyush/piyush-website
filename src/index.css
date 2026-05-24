@@ -7,3 +7,71 @@ html {
 body {
   margin: 0;
 }
+
+/* Smooth page texture */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(99, 102, 241, 0.22), transparent 30%),
+    radial-gradient(circle at 80% 10%, rgba(236, 72, 153, 0.18), transparent 28%),
+    radial-gradient(circle at 60% 90%, rgba(245, 158, 11, 0.14), transparent 32%),
+    #0a0a0a;
+}
+
+/* Subtle grain texture */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.06;
+  z-index: 0;
+  background-image:
+    linear-gradient(rgba(255,255,255,0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.08) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+/* Reusable animations */
+.fade-up {
+  animation: fadeUp 0.8s ease both;
+}
+
+.float-soft {
+  animation: floatSoft 7s ease-in-out infinite;
+}
+
+.glow-hover {
+  transition: transform 250ms ease, border-color 250ms ease, background 250ms ease, box-shadow 250ms ease;
+}
+
+.glow-hover:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 24px 80px rgba(255, 255, 255, 0.08);
+}
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes floatSoft {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+
+  50% {
+    transform: translateY(-14px);
+  }
+}

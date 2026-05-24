@@ -266,7 +266,7 @@ function Navbar() {
 
 function Hero() {
   return (
-    <section className="grid items-center gap-12 md:grid-cols-[1.15fr_0.85fr]">
+    <section className="fade-up grid items-center gap-12 md:grid-cols-[1.15fr_0.85fr]">
       <div>
         <div className="mb-5 inline-flex rounded-full border border-white/15 bg-white/[0.05] px-4 py-2 text-sm text-neutral-300 backdrop-blur">
           Surgeon • Researcher • Learner • Musician
@@ -290,7 +290,7 @@ function Hero() {
         </div>
       </div>
 
-      <aside className="rounded-[2rem] border border-white/10 bg-white/[0.08] p-4 shadow-2xl shadow-black/30 backdrop-blur-xl" aria-label="Profile summary">
+      <aside className="float-soft rounded-[2rem] border border-white/10 bg-white/[0.08] p-4 shadow-2xl shadow-black/30 backdrop-blur-xl" aria-label="Profile summary">
         <div className="rounded-[1.5rem] bg-gradient-to-br from-neutral-800 to-neutral-950 p-8">
           <div className="aspect-[4/5] rounded-[1.25rem] border border-white/10 bg-[linear-gradient(145deg,rgba(255,255,255,0.18),rgba(255,255,255,0.03))] p-6">
             <div className="flex h-full flex-col justify-between">
