@@ -1,4 +1,6 @@
+// Stable portfolio version with Supabase admin-only journals
 import { useEffect, useMemo, useState } from "react";
+import { createClient } from "@supabase/supabase-js";
 
 const CONTACT = {
   email: "pswami399@gmail.com",
@@ -7,7 +9,14 @@ const CONTACT = {
   subject: "Website Contact - Dr. Piyush Swami",
 };
 
-const STORAGE_PREFIX = "piyush-portfolio-log";
+const ADMIN_EMAIL = import.meta.env.VITE_ADMIN_EMAIL || CONTACT.email;
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+const supabase =
+  SUPABASE_URL && SUPABASE_ANON_KEY
+    ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+    : null;
 
 const navItems = [
   { label: "About", href: "#about" },
@@ -91,54 +100,6 @@ const journalItems = [
 
 const mailto = `mailto:${CONTACT.email}?subject=${encodeURIComponent(CONTACT.subject)}`;
 
-function getStorageKey(id) {
-  return `${STORAGE_PREFIX}:${id}`;
-}
-
-// --- Custom Hooks ---
-function useJournalStorage(activeLogId) {
-  const [draft, setDraft] = useState("");
-  const [savedAt, setSavedAt] = useState("");
-
-  useEffect(() => {
-    if (!activeLogId) return;
-    try {
-      setDraft(window.localStorage.getItem(getStorageKey(activeLogId)) || "");
-      setSavedAt(window.localStorage.getItem(`${getStorageKey(activeLogId)}:savedAt`) || "");
-    } catch (error) {
-      console.warn("Storage restricted:", error);
-    }
-  }, [activeLogId]);
-
-  const saveLog = () => {
-    if (!activeLogId) return;
-    try {
-      const timestamp = new Date().toLocaleString();
-      window.localStorage.setItem(getStorageKey(activeLogId), draft);
-      window.localStorage.setItem(`${getStorageKey(activeLogId)}:savedAt`, timestamp);
-      setSavedAt(timestamp);
-    } catch (error) {
-      console.error("Failed to save:", error);
-      alert("Unable to save log to local storage.");
-    }
-  };
-
-  const clearLog = () => {
-    if (!activeLogId) return;
-    try {
-      setDraft("");
-      setSavedAt("");
-      window.localStorage.removeItem(getStorageKey(activeLogId));
-      window.localStorage.removeItem(`${getStorageKey(activeLogId)}:savedAt`);
-    } catch (error) {
-      console.error("Failed to clear:", error);
-    }
-  };
-
-  return { draft, setDraft, savedAt, saveLog, clearLog };
-}
-
-// --- Components ---
 function SectionHeading({ eyebrow, title, description }) {
   return (
     <div>
@@ -159,19 +120,242 @@ function IconBox({ children }) {
   );
 }
 
-function LogEditor({ activeLog, onClose }) {
-  const { draft, setDraft, savedAt, saveLog, clearLog } = useJournalStorage(activeLog?.id);
+function useAdminSession() {
+  const [session, setSession] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!supabase) {
+      setLoading(false);
+      return;
+    }
+
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session || null);
+      setLoading(false);
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession || null);
+    });
+
+    return () => {
+      listener.subscription.unsubscribe();
+    };
+  }, []);
+
+  const userEmail = session?.user?.email || "";
+  const isAdmin = userEmail.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+
+  return { session, loading, isAdmin, userEmail };
+}
+
+function AdminPanel({ isAdmin, userEmail }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [email, setEmail] = useState(ADMIN_EMAIL);
+  const [password, setPassword] = useState("");
+  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function signIn(event) {
+    event.preventDefault();
+    setMessage("");
+
+    if (!supabase) {
+      setMessage("Supabase is not configured. Check your .env.local file.");
+      return;
+    }
+
+    setBusy(true);
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    setBusy(false);
+
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    setPassword("");
+    setIsOpen(false);
+  }
+
+  async function signOut() {
+    if (!supabase) return;
+    await supabase.auth.signOut();
+    setIsOpen(false);
+  }
+
+  if (isAdmin) {
+    return (
+      <div className="flex flex-wrap items-center gap-3 rounded-3xl border border-emerald-400/20 bg-emerald-400/10 p-4 text-sm text-emerald-100">
+        <span>Admin active: {userEmail}</span>
+        <button
+          type="button"
+          onClick={signOut}
+          className="rounded-full border border-white/20 px-4 py-2 text-white hover:bg-white/[0.08]"
+        >
+          Sign out
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-4">
+      <button
+        type="button"
+        onClick={() => setIsOpen((value) => !value)}
+        className="rounded-full bg-white px-5 py-2 text-sm font-medium text-neutral-950 hover:bg-neutral-200"
+      >
+        Admin Login
+      </button>
+
+      {isOpen ? (
+        <form onSubmit={signIn} className="mt-4 grid gap-3 sm:max-w-md">
+          <input
+            type="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            className="rounded-2xl border border-white/10 bg-neutral-950/80 px-4 py-3 text-white outline-none focus:border-white/30"
+            placeholder="Admin email"
+            autoComplete="email"
+          />
+          <input
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            className="rounded-2xl border border-white/10 bg-neutral-950/80 px-4 py-3 text-white outline-none focus:border-white/30"
+            placeholder="Password"
+            autoComplete="current-password"
+          />
+          <button
+            type="submit"
+            disabled={busy}
+            className="rounded-full bg-white px-5 py-3 text-sm font-medium text-neutral-950 hover:bg-neutral-200 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {busy ? "Signing in..." : "Sign in"}
+          </button>
+          {message ? <p className="text-sm text-red-300">{message}</p> : null}
+        </form>
+      ) : null}
+    </div>
+  );
+}
+
+function LogEditor({ activeLog, mode = "read", isAdmin = false, onClose }) {
+  const canEdit = isAdmin && mode === "edit";
+  const [draft, setDraft] = useState("");
+  const [savedAt, setSavedAt] = useState("");
+  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (!activeLog) return;
+
+    async function loadLog() {
+      setBusy(true);
+      setMessage("Loading journal...");
+      setDraft("");
+      setSavedAt("");
+
+      if (!supabase) {
+        setBusy(false);
+        setMessage("Supabase is not configured.");
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("journals")
+        .select("content, updated_at")
+        .eq("id", activeLog.id)
+        .maybeSingle();
+
+      setBusy(false);
+
+      if (error) {
+        setMessage(error.message);
+        return;
+      }
+
+      setDraft(data?.content || "");
+      setSavedAt(data?.updated_at ? new Date(data.updated_at).toLocaleString() : "");
+      setMessage("");
+    }
+
+    loadLog();
+  }, [activeLog]);
+
+  useEffect(() => {
+    if (!activeLog) return;
+
     function handleEscape(event) {
       if (event.key === "Escape") onClose();
     }
+
     window.addEventListener("keydown", handleEscape);
     return () => window.removeEventListener("keydown", handleEscape);
   }, [activeLog, onClose]);
 
   if (!activeLog) return null;
+
+  async function saveLog() {
+    setMessage("");
+
+    if (!supabase) {
+      setMessage("Supabase is not configured.");
+      return;
+    }
+
+    const timestamp = new Date().toISOString();
+    setBusy(true);
+
+    const { error } = await supabase.from("journals").upsert({
+      id: activeLog.id,
+      title: activeLog.title,
+      content: draft,
+      updated_at: timestamp,
+    });
+
+    setBusy(false);
+
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    setSavedAt(new Date(timestamp).toLocaleString());
+    setMessage("Saved online.");
+  }
+
+  async function clearLog() {
+    setDraft("");
+    setMessage("");
+
+    if (!supabase) {
+      setMessage("Supabase is not configured.");
+      return;
+    }
+
+    const timestamp = new Date().toISOString();
+    setBusy(true);
+
+    const { error } = await supabase.from("journals").upsert({
+      id: activeLog.id,
+      title: activeLog.title,
+      content: "",
+      updated_at: timestamp,
+    });
+
+    setBusy(false);
+
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    setSavedAt(new Date(timestamp).toLocaleString());
+    setMessage("Cleared online.");
+  }
 
   return (
     <div
@@ -186,7 +370,9 @@ function LogEditor({ activeLog, onClose }) {
             <div className="flex items-center gap-3">
               <IconBox>{activeLog.icon}</IconBox>
               <div>
-                <p className="text-xs font-medium uppercase tracking-[0.22em] text-neutral-500">Editable Log</p>
+                <p className="text-xs font-medium uppercase tracking-[0.22em] text-neutral-500">
+                  {canEdit ? "Admin Journal" : "Public Journal"}
+                </p>
                 <h2 id="log-editor-title" className="text-2xl font-semibold tracking-tight text-white md:text-3xl">
                   {activeLog.title}
                 </h2>
@@ -194,6 +380,7 @@ function LogEditor({ activeLog, onClose }) {
             </div>
             <p className="mt-4 max-w-2xl leading-7 text-neutral-300">{activeLog.prompt}</p>
             {savedAt ? <p className="mt-2 text-sm text-neutral-500">Last saved: {savedAt}</p> : null}
+            {message ? <p className="mt-2 text-sm text-neutral-400">{message}</p> : null}
           </div>
 
           <button
@@ -208,31 +395,38 @@ function LogEditor({ activeLog, onClose }) {
 
         <div className="p-6 md:p-8">
           <textarea
-            autoFocus
+            autoFocus={canEdit}
+            readOnly={!canEdit}
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
-            placeholder={activeLog.placeholder}
-            className="min-h-[360px] w-full resize-y rounded-3xl border border-white/10 bg-white/[0.04] p-5 text-base leading-8 text-neutral-100 outline-none placeholder:text-neutral-600 focus:border-white/30 focus:bg-white/[0.06]"
+            placeholder={canEdit ? activeLog.placeholder : "No public entry has been published yet."}
+            className="min-h-[360px] w-full resize-y rounded-3xl border border-white/10 bg-white/[0.04] p-5 text-base leading-8 text-neutral-100 outline-none placeholder:text-neutral-600 focus:border-white/30 focus:bg-white/[0.06] read-only:cursor-default read-only:opacity-90"
           />
 
           <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
-            <p className="text-sm text-neutral-500">Your log is saved in this browser using local storage.</p>
-            <div className="flex flex-wrap gap-3">
-              <button
-                type="button"
-                onClick={clearLog}
-                className="rounded-full border border-white/20 bg-white/[0.04] px-5 py-3 text-sm font-medium text-white hover:bg-white/[0.09]"
-              >
-                Clear
-              </button>
-              <button
-                type="button"
-                onClick={saveLog}
-                className="inline-flex items-center rounded-full bg-white px-5 py-3 text-sm font-medium text-neutral-950 hover:bg-neutral-200"
-              >
-                💾 Save log
-              </button>
-            </div>
+            <p className="text-sm text-neutral-500">
+              {canEdit ? "Only the logged-in admin can save these journals online." : "Public visitors can read this journal but cannot edit it."}
+            </p>
+            {canEdit ? (
+              <div className="flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={clearLog}
+                  disabled={busy}
+                  className="rounded-full border border-white/20 bg-white/[0.04] px-5 py-3 text-sm font-medium text-white hover:bg-white/[0.09] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Clear
+                </button>
+                <button
+                  type="button"
+                  onClick={saveLog}
+                  disabled={busy}
+                  className="inline-flex items-center rounded-full bg-white px-5 py-3 text-sm font-medium text-neutral-950 hover:bg-neutral-200 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {busy ? "Working..." : "💾 Save online"}
+                </button>
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
@@ -266,7 +460,7 @@ function Navbar() {
 
 function Hero() {
   return (
-    <section className="fade-up grid items-center gap-12 md:grid-cols-[1.15fr_0.85fr]">
+    <section className="grid items-center gap-12 md:grid-cols-[1.15fr_0.85fr]">
       <div>
         <div className="mb-5 inline-flex rounded-full border border-white/15 bg-white/[0.05] px-4 py-2 text-sm text-neutral-300 backdrop-blur">
           Surgeon • Researcher • Learner • Musician
@@ -290,7 +484,7 @@ function Hero() {
         </div>
       </div>
 
-      <aside className="float-soft rounded-[2rem] border border-white/10 bg-white/[0.08] p-4 shadow-2xl shadow-black/30 backdrop-blur-xl" aria-label="Profile summary">
+      <aside className="rounded-[2rem] border border-white/10 bg-white/[0.08] p-4 shadow-2xl shadow-black/30 backdrop-blur-xl" aria-label="Profile summary">
         <div className="rounded-[1.5rem] bg-gradient-to-br from-neutral-800 to-neutral-950 p-8">
           <div className="aspect-[4/5] rounded-[1.25rem] border border-white/10 bg-[linear-gradient(145deg,rgba(255,255,255,0.18),rgba(255,255,255,0.03))] p-6">
             <div className="flex h-full flex-col justify-between">
@@ -356,13 +550,17 @@ function Work() {
   );
 }
 
-function Journal({ onOpenLog }) {
+function Journal({ isAdmin, onOpenLog }) {
   return (
     <section id="journal" className="mt-28 grid scroll-mt-28 gap-10 md:grid-cols-[0.8fr_1.2fr]">
       <SectionHeading
         eyebrow="Journal"
         title="Thoughts, logs, and field notes."
-        description="Open a category, write freely, and save your notes directly inside the website. Each log stays separate and editable."
+        description={
+          isAdmin
+            ? "Admin mode is active. Open a category to edit and save journals online."
+            : "Public visitors can read journals. Only the admin can edit and save them."
+        }
       />
 
       <div className="grid gap-4 sm:grid-cols-2">
@@ -370,7 +568,7 @@ function Journal({ onOpenLog }) {
           <button
             key={post.id}
             type="button"
-            onClick={() => onOpenLog(post.id)}
+            onClick={() => onOpenLog(post.id, isAdmin ? "edit" : "read")}
             className="rounded-3xl border border-white/10 bg-neutral-900/80 p-6 text-left text-white transition hover:border-white/20 hover:bg-neutral-900"
           >
             <div className="flex items-center justify-between">
@@ -380,7 +578,7 @@ function Journal({ onOpenLog }) {
             <h3 className="mt-8 text-2xl font-semibold tracking-tight">{post.title}</h3>
             <p className="mt-4 leading-6 text-neutral-400">{post.prompt}</p>
             <span className="mt-6 inline-flex items-center gap-2 text-sm font-medium text-white">
-              Open editable log <span aria-hidden="true">→</span>
+              {isAdmin ? "Open admin editor" : "Read journal"} <span aria-hidden="true">→</span>
             </span>
           </button>
         ))}
@@ -422,6 +620,9 @@ function Contact() {
 
 export default function App() {
   const [activeLogId, setActiveLogId] = useState(null);
+  const [activeLogMode, setActiveLogMode] = useState("read");
+  const [showAdminPanel, setShowAdminPanel] = useState(false);
+  const { loading, isAdmin, userEmail } = useAdminSession();
 
   const activeLog = useMemo(
     () => journalItems.find((item) => item.id === activeLogId) || null,
@@ -441,11 +642,44 @@ export default function App() {
         <Hero />
         <About />
         <Work />
-        <Journal onOpenLog={setActiveLogId} />
+
+        <section className="mt-28 scroll-mt-28">
+          <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium uppercase tracking-[0.25em] text-neutral-400">Admin</p>
+              <h2 className="mt-2 text-3xl font-semibold tracking-tight">Journal access</h2>
+            </div>
+            {!isAdmin ? (
+              <button
+                type="button"
+                onClick={() => setShowAdminPanel((value) => !value)}
+                className="rounded-full border border-white/20 bg-white/[0.04] px-5 py-3 text-sm font-medium text-white hover:bg-white/[0.09]"
+              >
+                {showAdminPanel ? "Hide login" : "Admin Login"}
+              </button>
+            ) : null}
+          </div>
+
+          {loading ? <p className="text-neutral-400">Checking admin session...</p> : null}
+          {showAdminPanel || isAdmin ? <AdminPanel isAdmin={isAdmin} userEmail={userEmail} /> : null}
+        </section>
+
+        <Journal
+          isAdmin={isAdmin}
+          onOpenLog={(logId, mode) => {
+            setActiveLogId(logId);
+            setActiveLogMode(mode);
+          }}
+        />
         <Contact />
       </main>
 
-      <LogEditor activeLog={activeLog} onClose={() => setActiveLogId(null)} />
+      <LogEditor
+        activeLog={activeLog}
+        mode={activeLogMode}
+        isAdmin={isAdmin}
+        onClose={() => setActiveLogId(null)}
+      />
     </div>
   );
 }
